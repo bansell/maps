@@ -1,0 +1,149 @@
+---
+title: "leaflet"
+format: html
+editor: visual
+---
+```{r}
+library(tidyverse)
+library(ggiraph)
+library(leaflet)
+library(sf)
+
+```
+```{r}
+#| echo: false
+
+leaflet(options = leafletOptions(preferCanvas = TRUE))
+```
+
+```{r}
+
+
+leaflet() |>
+  addTiles() |>
+  setView(lng = 144.9631, lat = -37.8136, zoom = 10) |>
+  addMarkers(
+    lng = 144.9631,
+    lat = -37.8136,
+    popup = "Melbourne CBD"
+  )
+
+```
+```{r}
+#remotes::install_github("runapp-aus/strayr")
+
+mapdata1 <- strayr::read_absmap("sa32021")
+
+# mapdata1
+```
+
+```{r}
+
+#NB this renders fine, but throws an error when code chunks are run!
+
+mapdata1 %>%
+  filter(gcc_name_2021 == "Greater Melbourne") %>%    
+  ggplot() +
+  geom_sf(aes(geometry = geometry,  # use the geometry variable
+              fill = areasqkm_2021),     # fill by area size
+          lwd = 0,                  # remove borders
+          show.legend = FALSE) +    # remove legend
+  geom_point(aes(cent_long,
+                 cent_lat),        # use the centroid long (x) and lats (y)
+             colour = "white") +    # make the points white
+  theme_void() +                    # clears other plot elements
+  coord_sf()
+
+```
+
+
+```{r}
+income <- read_csv("https://raw.githubusercontent.com/wfmackey/absmapsdata/master/img/data/median_income_sa3.csv")
+
+combined_data <- left_join(income,
+                           mapdata1,
+                           by = c("sa3_name_2016"='sa3_name_2021'))
+
+
+# map <- combined_data %>%
+#   filter(gcc_name_2021 == "Greater Melbourne") %>%   # let's just look Melbourne
+#   ggplot() +
+#   geom_sf(aes(geometry = geometry,   # use the geometry variable
+#               fill = median_income), # fill by unemployment rate
+#           lwd = 0) +                 # remove borders
+#   theme_void() +                     # clears other plot elements
+#   labs(fill = "Median income"); map
+```
+
+## ggiraph 
+
+```{r}
+plot_data <- combined_data %>%
+  filter(gcc_name_2021 == "Greater Melbourne")
+
+# Create interactive plot
+p_grph <- ggplot() +
+  geom_sf_interactive(
+    #data = plot_data,
+    data = combined_data,
+    aes(
+      geometry = geometry,
+      fill = median_income,
+      tooltip = paste0(sa3_name_2016,'\n',
+                       "Median income: $", median_income) # Hover text
+    ),
+    lwd = 0,colour='lightgrey'
+  ) +
+  theme_void() +
+  labs(fill = "Median income") + scale_fill_viridis_c(end=0.9)
+
+# Render with ggiraph
+girafe(ggobj = p_grph)
+
+# NB girafe() output not saved, p_grph saved, and it is always wrapped in girafe() before rendering
+
+```
+
+```{r}
+#restore the sf class:
+plot_data <- sf::st_as_sf(plot_data)
+
+leaflet(plot_data,
+        
+  options = leafletOptions(
+     minZoom = 6,          # lowest zoom allowed
+     maxZoom = 13,         # highest zoom allowed
+     
+    maxBounds = list(
+      c(-38.6, 144.2),   # SW corner (lat, lng)
+      c(-37.3, 145.7)    # NE corner (lat, lng)
+    ),
+    maxBoundsViscosity = 1.0   # fully restrict panning
+  )
+) |>
+  addProviderTiles("CartoDB.Positron") |>
+  addPolygons(
+    fillColor = ~colorNumeric("viridis", median_income)(median_income),
+    fillOpacity = 0.1,
+    #stroke=FALSE,
+    weight = 2, #border weight
+    color = "white",
+    label = ~paste0(
+      sa3_name_2016, "\n",
+      "Median income: $", median_income
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      color = "black",
+      bringToFront = TRUE
+    )
+  ) |>
+  addLegend(
+    pal = colorNumeric("viridis", plot_data$median_income),
+    values = plot_data$median_income,
+    title = "Median income"
+  )
+```
+
+
+
